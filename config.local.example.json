@@ -1,0 +1,13 @@
+{
+  "api_key": "las-your-api-key",
+  "base_url": "https://operator.las.cn-beijing.volces.com",
+  "poll_interval_seconds": 5,
+  "poll_timeout_seconds": 7200,
+  "tos_endpoint": "tos-cn-beijing.volces.com",
+  "tos_region": "cn-beijing",
+  "tos_access_key_id": "your-tos-access-key-id",
+  "tos_access_key_secret": "your-tos-access-key-secret",
+  "tos_bucket": "your-volcengine-bucket",
+  "tos_input_prefix": "video-super-resolution/input",
+  "tos_output_prefix": "video-super-resolution/output"
+}
