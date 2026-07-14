@@ -16,6 +16,9 @@ OPERATOR_ID = "las_video_super_resolution"
 OPERATOR_VERSION = "v1"
 RESOLUTION_WIDTHS = {"720p": 1280, "1080p": 1920, "1440p": 2560, "2160p": 3840}
 TERMINAL_STATUSES = {"COMPLETED", "FAILED", "TIMEOUT"}
+VIDEO_EXTENSIONS = {
+    ".mp4", ".webm", ".mkv", ".mov", ".avi", ".flv", ".wmv", ".m4v", ".mpeg", ".mpg",
+}
 
 
 def load_config():
@@ -23,13 +26,13 @@ def load_config():
         config = json.loads(LOCAL_CONFIG_PATH.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise RuntimeError(
-            f"找不到本地配置文件: {LOCAL_CONFIG_PATH}；请由 config.local.example.json 复制创建"
+            f"Missing local config: {LOCAL_CONFIG_PATH}. Copy config.local.example.json to config.local.json."
         ) from exc
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"config.local.json 格式错误: {exc}") from exc
+        raise RuntimeError(f"Invalid config.local.json: {exc}") from exc
 
     if not isinstance(config, dict):
-        raise RuntimeError("config.local.json 必须是 JSON 对象")
+        raise RuntimeError("config.local.json must be a JSON object")
 
     required = (
         "api_key", "base_url", "tos_endpoint", "tos_region", "tos_access_key_id",
@@ -37,7 +40,7 @@ def load_config():
     )
     missing = [key for key in required if not str(config.get(key, "")).strip()]
     if missing:
-        raise RuntimeError(f"请先在 config.local.json 配置: {', '.join(missing)}")
+        raise RuntimeError(f"Missing config.local.json fields: {', '.join(missing)}")
     return config
 
 
@@ -53,6 +56,21 @@ def output_directory():
     return directory
 
 
+def input_video_files():
+    try:
+        import folder_paths
+
+        input_dir = Path(folder_paths.get_input_directory())
+        files = [item.name for item in input_dir.iterdir() if item.is_file()]
+        if hasattr(folder_paths, "filter_files_content_types"):
+            files = folder_paths.filter_files_content_types(files, ["video"])
+        else:
+            files = [name for name in files if Path(name).suffix.lower() in VIDEO_EXTENSIONS]
+    except Exception:
+        files = []
+    return [""] + sorted(files)
+
+
 def safe_file_name(url, task_id):
     file_name = Path(urlparse(url).path).name or f"{task_id}.mp4"
     file_name = re.sub(r"[^A-Za-z0-9._-]", "_", file_name)
@@ -63,11 +81,11 @@ def tos_client(config):
     tos_fields = ("tos_endpoint", "tos_region", "tos_access_key_id", "tos_access_key_secret", "tos_bucket")
     missing = [key for key in tos_fields if not str(config.get(key, "")).strip()]
     if missing:
-        raise RuntimeError(f"请先在 config.local.json 配置 TOS: {', '.join(missing)}")
+        raise RuntimeError(f"Missing TOS config.local.json fields: {', '.join(missing)}")
     try:
         import tos
     except ImportError as exc:
-        raise RuntimeError("缺少 tos，请执行 python -m pip install -r requirements.txt") from exc
+        raise RuntimeError("Missing dependency: run python -m pip install -r requirements.txt") from exc
     return tos.TosClientV2(
         config["tos_access_key_id"],
         config["tos_access_key_secret"],
@@ -95,7 +113,7 @@ def upload_to_tos(source_path, config):
             bucket=config["tos_bucket"], key=object_key, file_path=str(source_path)
         )
     except Exception as exc:
-        raise RuntimeError(f"上传 TOS 失败: {exc}") from exc
+        raise RuntimeError(f"Upload to TOS failed: {exc}") from exc
     return tos_path(config["tos_bucket"], object_key)
 
 
@@ -116,9 +134,47 @@ def upload_http_url_to_tos(source_url, config):
                         handle.write(chunk)
         return upload_to_tos(temporary_path, config)
     except requests.RequestException as exc:
-        raise RuntimeError(f"下载输入视频 URL 失败: {exc}") from exc
+        raise RuntimeError(f"Download input video URL failed: {exc}") from exc
     finally:
         temporary_path.unlink(missing_ok=True)
+
+
+def resolve_local_video(local_video):
+    local_video = str(local_video or "").strip()
+    if not local_video:
+        return None
+
+    direct_path = Path(local_video).expanduser()
+    if direct_path.is_file():
+        return direct_path
+
+    try:
+        import folder_paths
+
+        if folder_paths.exists_annotated_filepath(local_video):
+            return Path(folder_paths.get_annotated_filepath(local_video))
+    except ImportError:
+        pass
+
+    raise ValueError(f"local_video is not a valid ComfyUI input video: {local_video}")
+
+
+def resolve_source_url(video_url, local_video, config):
+    video_url = str(video_url or "").strip()
+    if video_url.startswith("tos://"):
+        return video_url
+    if video_url.startswith(("http://", "https://")):
+        return upload_http_url_to_tos(video_url, config)
+    if video_url:
+        source_path = Path(video_url).expanduser()
+        if not source_path.is_file():
+            raise ValueError("video_url must be a TOS path, HTTP(S) video URL, or existing local absolute path")
+        return upload_to_tos(source_path, config)
+
+    source_path = resolve_local_video(local_video)
+    if source_path is None:
+        raise ValueError("Set video_url, or select/upload a local_video")
+    return upload_to_tos(source_path, config)
 
 
 def download_from_tos(tos_url, destination, config):
@@ -126,11 +182,11 @@ def download_from_tos(tos_url, destination, config):
     bucket = parsed.netloc
     key = parsed.path.lstrip("/")
     if not bucket or not key:
-        raise RuntimeError(f"无效的 TOS 结果路径: {tos_url}")
+        raise RuntimeError(f"Invalid TOS result path: {tos_url}")
     try:
         tos_client(config).get_object_to_file(bucket=bucket, key=key, file_path=str(destination))
     except Exception as exc:
-        raise RuntimeError(f"从 TOS 下载结果失败: {exc}") from exc
+        raise RuntimeError(f"Download result from TOS failed: {exc}") from exc
 
 
 class LASVideoSuperResolution:
@@ -146,11 +202,19 @@ class LASVideoSuperResolution:
                 "video_url": ("STRING", {
                     "default": "",
                     "multiline": False,
-                    "tooltip": "TOS 路径、HTTP(S) 视频 URL 或本地绝对路径；后两者会自动上传到配置的 TOS",
+                    "tooltip": (
+                        "TOS path, HTTP(S) video URL, or local absolute path. "
+                        "HTTP(S) and local paths are uploaded to configured TOS. "
+                        "Leave empty to use local_video."
+                    ),
                 }),
                 "output_resolution": (["720p", "1080p", "1440p", "2160p"], {"default": "1080p"}),
             },
             "optional": {
+                "local_video": (input_video_files(), {
+                    "tooltip": "Select or upload a video from the ComfyUI input folder. Used only when video_url is empty.",
+                    "las_video_upload": True,
+                }),
                 "output_base_name": ("STRING", {"default": "", "multiline": False}),
                 "preserve_audio": ("BOOLEAN", {"default": True}),
                 "output_quality_mode": (["compatible", "balanced", "master"], {"default": "compatible"}),
@@ -158,17 +222,9 @@ class LASVideoSuperResolution:
         }
 
     def upscale(self, video_url, output_resolution, output_base_name="", preserve_audio=True,
-                output_quality_mode="compatible"):
+                output_quality_mode="compatible", local_video=""):
         config = load_config()
-        if video_url.startswith("tos://"):
-            source_url = video_url
-        elif video_url.startswith(("http://", "https://")):
-            source_url = upload_http_url_to_tos(video_url, config)
-        else:
-            source_path = Path(video_url).expanduser()
-            if not source_path.is_file():
-                raise ValueError("video_url 必须为 TOS 路径、HTTP(S) 视频 URL 或存在的本地视频绝对路径")
-            source_url = upload_to_tos(source_path, config)
+        source_url = resolve_source_url(video_url, local_video, config)
         headers = {
             "Authorization": f"Bearer {config['api_key']}",
             "Content-Type": "application/json",
@@ -191,17 +247,15 @@ class LASVideoSuperResolution:
                 "data": data,
             }, headers=headers, timeout=60,
         )
-        self._raise_for_api_error(response, "提交超分任务")
+        self._raise_for_api_error(response, "submit super-resolution task")
         task_id = response.json().get("metadata", {}).get("task_id")
         if not task_id:
-            raise RuntimeError("提交超分任务未返回 task_id")
+            raise RuntimeError("Submit response did not include metadata.task_id")
 
         result = self._wait_for_completion(base_url, headers, task_id, config)
         result_url = result.get("output_video_url") or result.get("output_video_tos_url")
         if not result_url:
-            raise RuntimeError(
-                "任务已完成但未返回 output_video_url 或 output_video_tos_url。"
-            )
+            raise RuntimeError("Task completed but did not return output_video_url or output_video_tos_url")
         local_path = output_directory() / safe_file_name(result_url, task_id)
         if result_url.startswith("tos://"):
             download_from_tos(result_url, local_path, config)
@@ -221,16 +275,16 @@ class LASVideoSuperResolution:
                     "task_id": task_id,
                 }, headers=headers, timeout=60,
             )
-            self._raise_for_api_error(response, f"查询任务 {task_id}")
+            self._raise_for_api_error(response, f"poll task {task_id}")
             payload = response.json()
             metadata = payload.get("metadata", {})
             status = metadata.get("task_status", "")
             if status == "COMPLETED":
                 return payload.get("data", {})
             if status in TERMINAL_STATUSES:
-                raise RuntimeError(f"超分任务 {status}: {metadata.get('error_msg') or '未知错误'}")
+                raise RuntimeError(f"Super-resolution task {status}: {metadata.get('error_msg') or 'unknown error'}")
             time.sleep(interval)
-        raise TimeoutError(f"等待超分任务超时（{timeout} 秒）：{task_id}")
+        raise TimeoutError(f"Timed out waiting for super-resolution task after {timeout} seconds: {task_id}")
 
     @staticmethod
     def _raise_for_api_error(response, action):
@@ -241,7 +295,7 @@ class LASVideoSuperResolution:
                 detail = response.json()
             except ValueError:
                 detail = response.text
-            raise RuntimeError(f"{action}失败（HTTP {response.status_code}）: {detail}") from exc
+            raise RuntimeError(f"{action} failed (HTTP {response.status_code}): {detail}") from exc
 
     @staticmethod
     def _download(url, destination):
