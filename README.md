@@ -14,6 +14,7 @@
 
 - 输入：支持 `tos://bucket/key`、HTTP(S) 视频 URL、本地绝对路径，或节点里的 `local_video` 上传控件。HTTP(S)、本地绝对路径、`local_video` 都会先上传到配置里的 `tos_bucket/tos_input_prefix`。
 - 输出：LAS 将结果写入同一 `tos_bucket` 的 `tos_output_prefix`，节点再下载到 ComfyUI 的 `output/volcengine_video_super_resolution` 目录。
+- 分辨率：对可探测到本地源文件的输入，节点会读取原视频宽高，按所选 720p/1080p/1440p/2160p 档位的最大像素数计算目标宽高，并保持原始宽高比。`tos://` 直传输入无法本地探测尺寸时，会回退为只传目标宽度。
 
 因此，`tos_bucket` 必须和 LAS 服务同主账号、同地域，并且具备输入对象读取和输出目录写入权限。
 

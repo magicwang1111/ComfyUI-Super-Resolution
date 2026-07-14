@@ -1,6 +1,8 @@
 import json
+import math
 import os
 import re
+import subprocess
 import tempfile
 import time
 import uuid
@@ -15,6 +17,12 @@ LOCAL_CONFIG_PATH = NODE_DIR / "config.local.json"
 OPERATOR_ID = "las_video_super_resolution"
 OPERATOR_VERSION = "v1"
 RESOLUTION_WIDTHS = {"720p": 1280, "1080p": 1920, "1440p": 2560, "2160p": 3840}
+RESOLUTION_MAX_PIXELS = {
+    "720p": 927408,
+    "1080p": 2086876,
+    "1440p": 3709632,
+    "2160p": 8347504,
+}
 TERMINAL_STATUSES = {"COMPLETED", "FAILED", "TIMEOUT"}
 VIDEO_EXTENSIONS = {
     ".mp4", ".webm", ".mkv", ".mov", ".avi", ".flv", ".wmv", ".m4v", ".mpeg", ".mpg",
@@ -117,6 +125,54 @@ def upload_to_tos(source_path, config):
     return tos_path(config["tos_bucket"], object_key)
 
 
+def probe_video_size(source_path):
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-show_entries", "stream=width,height", "-of", "json", str(source_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        raise RuntimeError(f"Failed to probe input video size with ffprobe: {source_path}") from exc
+
+    streams = json.loads(result.stdout or "{}").get("streams", [])
+    if not streams:
+        raise RuntimeError(f"No video stream found in input: {source_path}")
+    width = int(streams[0].get("width") or 0)
+    height = int(streams[0].get("height") or 0)
+    if width <= 0 or height <= 0:
+        raise RuntimeError(f"Invalid input video size: {source_path}")
+    return width, height
+
+
+def even_floor(value):
+    return max(2, int(value) // 2 * 2)
+
+
+def target_dimensions(output_resolution, source_size):
+    if source_size is None:
+        return {"target_width": RESOLUTION_WIDTHS[output_resolution]}
+
+    source_width, source_height = source_size
+    ratio = source_width / source_height
+    max_pixels = RESOLUTION_MAX_PIXELS[output_resolution]
+    target_height = math.sqrt(max_pixels / ratio)
+    target_width = target_height * ratio
+    width = even_floor(target_width)
+    height = even_floor(target_height)
+
+    while width * height > max_pixels:
+        if width >= height:
+            width -= 2
+        else:
+            height -= 2
+    return {"target_width": width, "target_height": height}
+
+
 def upload_http_url_to_tos(source_url, config):
     source_name = safe_file_name(source_url, uuid.uuid4().hex)
     suffix = Path(source_name).suffix or ".mp4"
@@ -132,7 +188,8 @@ def upload_http_url_to_tos(source_url, config):
                 for chunk in response.iter_content(chunk_size=1024 * 1024):
                     if chunk:
                         handle.write(chunk)
-        return upload_to_tos(temporary_path, config)
+        source_size = probe_video_size(temporary_path)
+        return upload_to_tos(temporary_path, config), source_size
     except requests.RequestException as exc:
         raise RuntimeError(f"Download input video URL failed: {exc}") from exc
     finally:
@@ -162,19 +219,19 @@ def resolve_local_video(local_video):
 def resolve_source_url(video_url, local_video, config):
     video_url = str(video_url or "").strip()
     if video_url.startswith("tos://"):
-        return video_url
+        return video_url, None
     if video_url.startswith(("http://", "https://")):
         return upload_http_url_to_tos(video_url, config)
     if video_url:
         source_path = Path(video_url).expanduser()
         if not source_path.is_file():
             raise ValueError("video_url must be a TOS path, HTTP(S) video URL, or existing local absolute path")
-        return upload_to_tos(source_path, config)
+        return upload_to_tos(source_path, config), probe_video_size(source_path)
 
     source_path = resolve_local_video(local_video)
     if source_path is None:
         raise ValueError("Set video_url, or select/upload a local_video")
-    return upload_to_tos(source_path, config)
+    return upload_to_tos(source_path, config), probe_video_size(source_path)
 
 
 def download_from_tos(tos_url, destination, config):
@@ -224,7 +281,7 @@ class LASVideoSuperResolution:
     def upscale(self, video_url, output_resolution, output_base_name="", preserve_audio=True,
                 output_quality_mode="compatible", local_video=""):
         config = load_config()
-        source_url = resolve_source_url(video_url, local_video, config)
+        source_url, source_size = resolve_source_url(video_url, local_video, config)
         headers = {
             "Authorization": f"Bearer {config['api_key']}",
             "Content-Type": "application/json",
@@ -232,10 +289,10 @@ class LASVideoSuperResolution:
         data = {
             "video_url": source_url,
             "output_tos_path": output_tos_path(config),
-            "target_width": RESOLUTION_WIDTHS[output_resolution],
             "preserve_audio": preserve_audio,
             "output_quality_mode": output_quality_mode,
         }
+        data.update(target_dimensions(output_resolution, source_size))
         if output_base_name.strip():
             data["output_base_name"] = output_base_name.strip()
 
