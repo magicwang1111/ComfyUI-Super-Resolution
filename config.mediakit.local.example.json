@@ -1,0 +1,14 @@
+{
+  "api_key": "your-volcengine-ai-mediakit-api-key",
+  "base_url": "https://mediakit.cn-beijing.volces.com",
+  "poll_interval_seconds": 10,
+  "poll_timeout_seconds": 10800,
+  "area": "china",
+  "oss_endpoint": "oss-cn-hangzhou.aliyuncs.com",
+  "oss_access_key_id": "your-aliyun-oss-access-key-id",
+  "oss_access_key_secret": "your-aliyun-oss-access-key-secret",
+  "oss_bucket": "your-oss-bucket",
+  "oss_prefix": "GouMee-super-resolution/input",
+  "oss_output_prefix": "GouMee-super-resolution/output",
+  "oss_signed_url_expires": 86400
+}

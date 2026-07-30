@@ -1,28 +1,64 @@
-# ComfyUI Volcengine Video Super Resolution
+# ComfyUI Super Resolution
 
-调用火山引擎 LAS `las_video_super_resolution` 算子，对输入视频做清晰度增强和分辨率提升，输出 720p、1080p、1440p 或 2160p 视频。
+本插件提供两个彼此独立的火山引擎视频增强节点：
 
-## 配置
+- **LAS Video Super Resolution**：原有 LAS `las_video_super_resolution` 算子和 TOS 流程。
+- **Volcengine AI MediaKit Video Enhance (OSS)**：新增 AI MediaKit `enhance-video` API 和阿里云 OSS 流程。
 
-1. 安装依赖：`python -m pip install -r requirements.txt`
-2. 将 `config.local.example.json` 复制为 `config.local.json`，填写 LAS API Key 和 TOS 凭据。
-3. 重启 ComfyUI，在 `Volcengine/LAS` 分类使用 **LAS Video Super Resolution**。
+## 安装依赖
 
-节点只读取 `config.local.json`；该文件已被 Git 忽略，不会提交真实密钥。
+在 ComfyUI Python 环境执行：
 
-## 存储方式
+```powershell
+python -m pip install -r requirements.txt
+```
 
-- 输入：支持 `tos://bucket/key`、HTTP(S) 视频 URL、本地绝对路径，或节点里的 `local_video` 上传控件。HTTP(S)、本地绝对路径、`local_video` 都会先上传到配置里的 `tos_bucket/tos_input_prefix`。
-- 输出：LAS 将结果写入同一 `tos_bucket` 的 `tos_output_prefix`，节点再下载到 ComfyUI 的 `output/volcengine_video_super_resolution` 目录。
-- 分辨率：对可探测到本地源文件的输入，节点会读取原视频宽高，按所选 720p/1080p/1440p/2160p 档位的最大像素数计算目标宽高，并保持原始宽高比。`tos://` 直传输入无法本地探测尺寸时，会回退为只传目标宽度。
+## 原有 LAS 节点
 
-因此，`tos_bucket` 必须和 LAS 服务同主账号、同地域，并且具备输入对象读取和输出目录写入权限。
+- 节点 ID：`LASVideoSuperResolution`
+- 分类：`Volcengine/LAS`
 
-## 节点参数
+LAS 节点代码、参数、`/api/v1/submit`、`/api/v1/poll`、TOS 输入输出和本地下载流程保持不变。
 
-- `video_url`：TOS 路径、HTTP(S) 视频 URL 或本地视频绝对路径；留空时使用 `local_video`。
-- `local_video`：从 ComfyUI input 目录选择或上传本地视频，节点会自动上传到 TOS。
-- `output_resolution`：`720p`、`1080p`、`1440p` 或 `2160p`。
-- `output_base_name`：可选的结果文件基础名。
-- `preserve_audio`：是否保留原音频。
-- `output_quality_mode`：`compatible`、`balanced` 或 `master`。
+1. 将 `config.local.example.json` 复制为 `config.local.json`。
+2. 填写 LAS API Key 和火山引擎 TOS 凭据。
+3. 重启 ComfyUI，添加 **LAS Video Super Resolution**。
+
+输入支持 `tos://bucket/key`、HTTP(S) 视频 URL、本地绝对路径，或节点中的 `local_video`。HTTP(S) 和本地文件会先上传到配置的 `tos_bucket/tos_input_prefix`。LAS 结果写入 `tos_output_prefix`，随后下载到 `output/volcengine_video_super_resolution`。
+
+输出分辨率支持 `720p`、`1080p`、`1440p`、`2160p`，并保持原始视频宽高比。
+
+## 新增 AI MediaKit 节点
+
+- 节点 ID：`VolcengineVideoEnhance`
+- 分类：`Volcengine/AI MediaKit`
+
+完整链路：
+
+`本地视频 -> 阿里云 OSS 输入目录 -> OSS 签名 URL -> AI MediaKit -> 下载临时结果 -> 阿里云 OSS 输出目录`
+
+1. 将 `config.mediakit.local.example.json` 复制为 `config.mediakit.local.json`。
+2. 填写 AI MediaKit API Key 和阿里云 OSS 配置。
+3. 重启 ComfyUI，添加 **Volcengine AI MediaKit Video Enhance (OSS)**。
+
+### 输入和输出
+
+- HTTP(S) OSS 公网或签名链接：直接提交。
+- `oss://bucket/key`：使用本地 OSS 凭据生成签名链接后提交。
+- 本地绝对路径或 `local_video`：先上传到 `oss_prefix`，再提交签名链接。
+- 处理结果下载到 `output/volcengine_video_enhance`，随后上传到 `oss_output_prefix`。
+- 返回本地视频路径、OSS 输出签名链接和 AI MediaKit 任务 ID。
+
+### 参数
+
+- `output_resolution`：支持 `240p`、`360p`、`480p`、`540p`、`720p`、`1080p`、`2k`、`4k`、`8k`。兼容值 `1440p` 映射为 `2k`，`2160p` 映射为 `4k`。
+- `tool_version`：`standard` 或 `professional`。
+- `scene`：标准版支持 `common`、`ugc`、`short_series`、`aigc`、`old_film`。
+- `bitrate_level`：`low`、`medium`、`high`。
+- `fps`：`0` 保持原帧率；指定值范围为 15–120。
+- `bit_depth`：仅专业版支持 8/10/12 bit；`auto` 不传该参数。
+- `output_base_name`：可选的本地输出文件名。
+
+## 密钥安全
+
+`config.local.json` 和 `config.mediakit.local.json` 均被 Git 忽略，真实密钥不会提交到仓库。

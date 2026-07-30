@@ -57,10 +57,10 @@ async function uploadFile(file, progressCallback) {
 
 function addLocalVideoUploadButton(node) {
   const localVideoWidget = node.widgets?.find((widget) => widget.name === "local_video");
-  if (!localVideoWidget || localVideoWidget.__lasUploadButtonAdded) {
+  if (!localVideoWidget || localVideoWidget.__videoEnhanceUploadButtonAdded) {
     return;
   }
-  localVideoWidget.__lasUploadButtonAdded = true;
+  localVideoWidget.__videoEnhanceUploadButtonAdded = true;
 
   const fileInput = document.createElement("input");
   fileInput.type = "file";
@@ -110,7 +110,7 @@ function addLocalVideoUploadButton(node) {
 app.registerExtension({
   name: "ComfyUI.SuperResolution.LocalVideoUpload",
   beforeRegisterNodeDef(nodeType, nodeData) {
-    if (nodeData.name !== "LASVideoSuperResolution") {
+    if (!["VolcengineVideoEnhance", "LASVideoSuperResolution"].includes(nodeData.name)) {
       return;
     }
 
