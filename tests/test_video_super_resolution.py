@@ -20,6 +20,11 @@ class VideoEnhanceTests(unittest.TestCase):
         )
         self.assertNotIn("LASVideoSuperResolution", MODULE.NODE_CLASS_MAPPINGS)
 
+    def test_mediakit_node_does_not_show_las_only_inputs(self):
+        optional = MODULE.VolcengineVideoEnhance.INPUT_TYPES()["optional"]
+        self.assertNotIn("preserve_audio", optional)
+        self.assertNotIn("output_quality_mode", optional)
+
     def test_builds_standard_payload_and_maps_legacy_resolution(self):
         payload = MODULE.VolcengineVideoEnhance._build_payload(
             "https://example.com/input.mp4",

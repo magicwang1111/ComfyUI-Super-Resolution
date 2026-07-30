@@ -107,6 +107,54 @@ function addLocalVideoUploadButton(node) {
 }
 
 
+function setWidgetVisible(node, widget, visible) {
+  if (!widget) {
+    return;
+  }
+  widget.__originalComputeSize ??= widget.computeSize;
+  widget.hidden = !visible;
+  widget.computeSize = visible ? widget.__originalComputeSize : () => [0, -4];
+  widget.computedHeight = visible ? undefined : 0;
+  node.setSize([node.size[0], node.computeSize()[1]]);
+}
+
+
+function configureMediaKitVersionWidgets(node) {
+  const versionWidget = node.widgets?.find((widget) => widget.name === "tool_version");
+  const sceneWidget = node.widgets?.find((widget) => widget.name === "scene");
+  const bitDepthWidget = node.widgets?.find((widget) => widget.name === "bit_depth");
+  if (!versionWidget || !sceneWidget || !bitDepthWidget) {
+    return;
+  }
+
+  const updateVisibility = () => {
+    const professional = versionWidget.value === "professional";
+    if (!professional) {
+      bitDepthWidget.value = "auto";
+    }
+    setWidgetVisible(node, sceneWidget, !professional);
+    setWidgetVisible(node, bitDepthWidget, professional);
+    app.graph.setDirtyCanvas(true, true);
+  };
+
+  const originalCallback = versionWidget.callback;
+  versionWidget.callback = function (...args) {
+    const result = originalCallback?.apply(this, args);
+    updateVisibility();
+    return result;
+  };
+
+  const originalOnConfigure = node.onConfigure;
+  node.onConfigure = function (...args) {
+    const result = originalOnConfigure?.apply(this, args);
+    updateVisibility();
+    return result;
+  };
+
+  updateVisibility();
+}
+
+
 app.registerExtension({
   name: "ComfyUI.SuperResolution.LocalVideoUpload",
   beforeRegisterNodeDef(nodeType, nodeData) {
@@ -118,6 +166,9 @@ app.registerExtension({
     nodeType.prototype.onNodeCreated = function (...args) {
       const result = originalOnNodeCreated?.apply(this, args);
       addLocalVideoUploadButton(this);
+      if (nodeData.name === "VolcengineVideoEnhance") {
+        configureMediaKitVersionWidgets(this);
+      }
       return result;
     };
   },

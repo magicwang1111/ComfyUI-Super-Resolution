@@ -19,6 +19,20 @@ RESOLUTION_ALIASES = {"1440p": "2k", "2160p": "4k"}
 TERMINAL_FAILURE_STATUSES = {"failed", "canceled", "cancelled"}
 
 
+def create_progress_bar():
+    try:
+        import comfy.utils
+
+        return comfy.utils.ProgressBar(100)
+    except ImportError:
+        return None
+
+
+def update_progress(progress_bar, value):
+    if progress_bar is not None:
+        progress_bar.update_absolute(value)
+
+
 def load_config():
     try:
         config = json.loads(LOCAL_CONFIG_PATH.read_text(encoding="utf-8"))
@@ -278,17 +292,6 @@ class VolcengineVideoEnhance:
                     "las_video_upload": True,
                 }),
                 "output_base_name": ("STRING", {"default": "", "multiline": False}),
-                "preserve_audio": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Compatibility option from the previous LAS node; AI MediaKit preserves audio.",
-                }),
-                "output_quality_mode": (
-                    ["compatible", "balanced", "master"],
-                    {
-                        "default": "compatible",
-                        "tooltip": "Compatibility option from the previous LAS node; ignored by AI MediaKit.",
-                    },
-                ),
                 "tool_version": (["standard", "professional"], {"default": "standard"}),
                 "scene": (
                     ["aigc", "common", "ugc", "short_series", "old_film"],
@@ -311,8 +314,6 @@ class VolcengineVideoEnhance:
         video_url,
         output_resolution,
         output_base_name="",
-        preserve_audio=True,
-        output_quality_mode="compatible",
         local_video="",
         tool_version="standard",
         scene="aigc",
@@ -320,9 +321,11 @@ class VolcengineVideoEnhance:
         fps=0,
         bit_depth="auto",
     ):
-        del preserve_audio, output_quality_mode
+        progress_bar = create_progress_bar()
+        update_progress(progress_bar, 5)
         config = load_config()
         source_url = resolve_source_url(video_url, local_video, config)
+        update_progress(progress_bar, 20)
         payload = self._build_payload(
             source_url,
             output_resolution,
@@ -347,8 +350,13 @@ class VolcengineVideoEnhance:
         task_id = str(submitted.get("task_id") or "").strip()
         if not task_id:
             raise RuntimeError("Submit response did not include task_id")
+        print(f"[AI MediaKit] Task submitted: {task_id}", flush=True)
+        update_progress(progress_bar, 35)
 
-        result = self._wait_for_completion(base_url, headers, task_id, config)
+        result = self._wait_for_completion(
+            base_url, headers, task_id, config, progress_bar
+        )
+        update_progress(progress_bar, 75)
         result_url = str(result.get("video_url") or "").strip()
         if not result_url.startswith(("http://", "https://")):
             raise RuntimeError(
@@ -358,8 +366,13 @@ class VolcengineVideoEnhance:
         local_path = output_directory() / result_file_name(
             result_url, task_id, output_base_name
         )
+        print(f"[AI MediaKit] Downloading completed task: {task_id}", flush=True)
         download_file(result_url, local_path)
+        update_progress(progress_bar, 90)
+        print(f"[AI MediaKit] Uploading result to OSS: {task_id}", flush=True)
         oss_url = upload_output(local_path, task_id, config)
+        update_progress(progress_bar, 100)
+        print(f"[AI MediaKit] Task finished: {task_id}", flush=True)
         return (str(local_path), oss_url, task_id)
 
     @staticmethod
@@ -393,16 +406,29 @@ class VolcengineVideoEnhance:
         return payload
 
     @staticmethod
-    def _wait_for_completion(base_url, headers, task_id, config):
+    def _wait_for_completion(base_url, headers, task_id, config, progress_bar=None):
         interval = max(1, int(config.get("poll_interval_seconds", 10)))
         timeout = max(interval, int(config.get("poll_timeout_seconds", 10800)))
-        deadline = time.monotonic() + timeout
+        started_at = time.monotonic()
+        deadline = started_at + timeout
         task_url = f"{base_url}/api/v1/tasks/{quote(task_id, safe='')}"
+        last_status = None
+        last_log_at = 0.0
 
         while time.monotonic() < deadline:
             response = requests.get(task_url, headers=headers, timeout=60)
             payload = ensure_api_success(response, f"Query task {task_id}")
             status = str(payload.get("status") or "").lower()
+            now = time.monotonic()
+            elapsed = int(now - started_at)
+            if status != last_status or now - last_log_at >= 60:
+                print(
+                    f"[AI MediaKit] Task {task_id}: "
+                    f"status={status or 'unknown'}, elapsed={elapsed}s",
+                    flush=True,
+                )
+                last_status = status
+                last_log_at = now
             if status == "completed":
                 result = payload.get("result")
                 if not isinstance(result, dict):
@@ -413,6 +439,7 @@ class VolcengineVideoEnhance:
             if status in TERMINAL_FAILURE_STATUSES:
                 error = payload.get("error") or "unknown error"
                 raise RuntimeError(f"Video enhance task {status}: {error}")
+            update_progress(progress_bar, 35)
             time.sleep(interval)
 
         raise TimeoutError(
