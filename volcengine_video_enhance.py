@@ -292,6 +292,13 @@ class VolcengineVideoEnhance:
                     "las_video_upload": True,
                 }),
                 "output_base_name": ("STRING", {"default": "", "multiline": False}),
+                # Keep these two serialized slots for workflows saved before the
+                # MediaKit node became independent. The frontend always hides them.
+                "preserve_audio": ("BOOLEAN", {"default": True}),
+                "output_quality_mode": (
+                    ["compatible", "balanced", "master"],
+                    {"default": "compatible"},
+                ),
                 "tool_version": (["standard", "professional"], {"default": "standard"}),
                 "scene": (
                     ["aigc", "common", "ugc", "short_series", "old_film"],
@@ -314,6 +321,8 @@ class VolcengineVideoEnhance:
         video_url,
         output_resolution,
         output_base_name="",
+        preserve_audio=True,
+        output_quality_mode="compatible",
         local_video="",
         tool_version="standard",
         scene="aigc",
@@ -321,6 +330,7 @@ class VolcengineVideoEnhance:
         fps=0,
         bit_depth="auto",
     ):
+        del preserve_audio, output_quality_mode
         progress_bar = create_progress_bar()
         update_progress(progress_bar, 5)
         config = load_config()

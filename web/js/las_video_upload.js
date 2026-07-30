@@ -123,15 +123,29 @@ function configureMediaKitVersionWidgets(node) {
   const versionWidget = node.widgets?.find((widget) => widget.name === "tool_version");
   const sceneWidget = node.widgets?.find((widget) => widget.name === "scene");
   const bitDepthWidget = node.widgets?.find((widget) => widget.name === "bit_depth");
-  if (!versionWidget || !sceneWidget || !bitDepthWidget) {
+  const preserveAudioWidget = node.widgets?.find((widget) => widget.name === "preserve_audio");
+  const qualityModeWidget = node.widgets?.find((widget) => widget.name === "output_quality_mode");
+  if (
+    !versionWidget
+    || !sceneWidget
+    || !bitDepthWidget
+    || !preserveAudioWidget
+    || !qualityModeWidget
+  ) {
     return;
   }
 
   const updateVisibility = () => {
+    const validScenes = ["aigc", "common", "ugc", "short_series", "old_film"];
+    if (!validScenes.includes(sceneWidget.value)) {
+      sceneWidget.value = "aigc";
+    }
     const professional = versionWidget.value === "professional";
     if (!professional) {
       bitDepthWidget.value = "auto";
     }
+    setWidgetVisible(node, preserveAudioWidget, false);
+    setWidgetVisible(node, qualityModeWidget, false);
     setWidgetVisible(node, sceneWidget, !professional);
     setWidgetVisible(node, bitDepthWidget, professional);
     app.graph.setDirtyCanvas(true, true);
@@ -147,11 +161,11 @@ function configureMediaKitVersionWidgets(node) {
   const originalOnConfigure = node.onConfigure;
   node.onConfigure = function (...args) {
     const result = originalOnConfigure?.apply(this, args);
-    updateVisibility();
+    setTimeout(updateVisibility, 0);
     return result;
   };
 
-  updateVisibility();
+  setTimeout(updateVisibility, 0);
 }
 
 
