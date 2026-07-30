@@ -122,12 +122,16 @@ function setWidgetVisible(node, widget, visible) {
 function configureMediaKitVersionWidgets(node) {
   const versionWidget = node.widgets?.find((widget) => widget.name === "tool_version");
   const sceneWidget = node.widgets?.find((widget) => widget.name === "scene");
+  const bitrateWidget = node.widgets?.find((widget) => widget.name === "bitrate_level");
+  const fpsWidget = node.widgets?.find((widget) => widget.name === "fps");
   const bitDepthWidget = node.widgets?.find((widget) => widget.name === "bit_depth");
   const preserveAudioWidget = node.widgets?.find((widget) => widget.name === "preserve_audio");
   const qualityModeWidget = node.widgets?.find((widget) => widget.name === "output_quality_mode");
   if (
     !versionWidget
     || !sceneWidget
+    || !bitrateWidget
+    || !fpsWidget
     || !bitDepthWidget
     || !preserveAudioWidget
     || !qualityModeWidget
@@ -160,8 +164,39 @@ function configureMediaKitVersionWidgets(node) {
 
   const originalOnConfigure = node.onConfigure;
   node.onConfigure = function (...args) {
+    const savedValues = args[0]?.widgets_values;
+    const removedSlotValues = Array.isArray(savedValues) && savedValues.length === 9
+      ? {
+          toolVersion: savedValues[4],
+          scene: savedValues[5],
+          bitrate: savedValues[6],
+          fps: savedValues[7],
+          bitDepth: savedValues[8],
+        }
+      : null;
     const result = originalOnConfigure?.apply(this, args);
-    setTimeout(updateVisibility, 0);
+    setTimeout(() => {
+      if (removedSlotValues) {
+        preserveAudioWidget.value = true;
+        qualityModeWidget.value = "compatible";
+        versionWidget.value = ["standard", "professional"].includes(
+          removedSlotValues.toolVersion
+        ) ? removedSlotValues.toolVersion : "standard";
+        sceneWidget.value = ["aigc", "common", "ugc", "short_series", "old_film"].includes(
+          removedSlotValues.scene
+        ) ? removedSlotValues.scene : "aigc";
+        bitrateWidget.value = ["low", "medium", "high"].includes(
+          removedSlotValues.bitrate
+        ) ? removedSlotValues.bitrate : "medium";
+        fpsWidget.value = Number.isFinite(Number(removedSlotValues.fps))
+          ? Number(removedSlotValues.fps)
+          : 0;
+        bitDepthWidget.value = ["auto", "8", "10", "12"].includes(
+          String(removedSlotValues.bitDepth)
+        ) ? String(removedSlotValues.bitDepth) : "auto";
+      }
+      updateVisibility();
+    }, 0);
     return result;
   };
 
