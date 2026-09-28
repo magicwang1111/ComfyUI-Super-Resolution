@@ -107,6 +107,22 @@ function addLocalVideoUploadButton(node) {
 }
 
 
+function configureTencentResumeWidget(node) {
+  const originalOnConfigure = node.onConfigure;
+  node.onConfigure = function (...args) {
+    const result = originalOnConfigure?.apply(this, args);
+    const savedValues = args[0]?.widgets_values;
+    const resumeWidget = this.widgets?.find((widget) => widget.name === "resume_task_id");
+    // Older workflows saved the upload button in the slot now used for the task ID.
+    if (resumeWidget && savedValues?.[5] === "video"
+        && (savedValues.length === 6 || (savedValues.length === 7 && savedValues[6] === "video"))) {
+      resumeWidget.value = "";
+    }
+    return result;
+  };
+}
+
+
 function setWidgetVisible(node, widget, visible) {
   if (!widget) {
     return;
@@ -217,6 +233,9 @@ app.registerExtension({
       addLocalVideoUploadButton(this);
       if (nodeData.name === "VolcengineVideoEnhance") {
         configureMediaKitVersionWidgets(this);
+      }
+      if (nodeData.name === "TencentMPSVideoEnhance") {
+        configureTencentResumeWidget(this);
       }
       return result;
     };

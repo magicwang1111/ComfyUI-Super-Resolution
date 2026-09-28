@@ -155,7 +155,7 @@ class TencentTests(unittest.TestCase):
             now[0] += seconds
         progress = Mock()
         with patch.object(MODULE.time, "monotonic", side_effect=lambda: now[0]), patch.object(MODULE.time, "sleep", side_effect=sleep):
-            output = MODULE.wait_for_completion(client, "task-1", 327003, {**config(), "tencent_max_wait_seconds": 10}, progress)
+            output = MODULE.wait_for_completion(client, "2600028868-WorkflowTask-test1", 327003, {**config(), "tencent_max_wait_seconds": 10}, progress)
         self.assertEqual(output["Path"], "/output/video.mp4")
         self.assertEqual(client.DescribeTaskDetail.call_count, 2)
         self.assertEqual(client.request.conn.timeout, 5)
@@ -173,8 +173,8 @@ class TencentTests(unittest.TestCase):
             with self.subTest(case=case):
                 client = Mock()
                 client.DescribeTaskDetail.return_value = response(case)
-                with self.assertRaisesRegex(RuntimeError, "task-1"):
-                    MODULE.wait_for_completion(client, "task-1", 327003, config(), None)
+                with self.assertRaisesRegex(RuntimeError, "2600028868-WorkflowTask-test1"):
+                    MODULE.wait_for_completion(client, "2600028868-WorkflowTask-test1", 327003, config(), None)
                 client.ProcessMedia.assert_not_called()
 
     def test_timeout_does_not_resubmit(self):
@@ -184,8 +184,8 @@ class TencentTests(unittest.TestCase):
         def sleep(seconds):
             now[0] += seconds
         with patch.object(MODULE.time, "monotonic", side_effect=lambda: now[0]), patch.object(MODULE.time, "sleep", side_effect=sleep):
-            with self.assertRaisesRegex(TimeoutError, "task-1"):
-                MODULE.wait_for_completion(client, "task-1", 327003, {**config(), "tencent_max_wait_seconds": 1}, None)
+            with self.assertRaisesRegex(TimeoutError, "2600028868-WorkflowTask-test1"):
+                MODULE.wait_for_completion(client, "2600028868-WorkflowTask-test1", 327003, {**config(), "tencent_max_wait_seconds": 1}, None)
         client.ProcessMedia.assert_not_called()
 
     def test_interrupt_during_poll_wait(self):
@@ -193,15 +193,15 @@ class TencentTests(unittest.TestCase):
         client.DescribeTaskDetail.return_value = response(result("PROCESSING"))
         with patch.object(MODULE, "throw_exception_if_processing_interrupted", side_effect=[None, InterruptedError("cancel")]):
             with self.assertRaises(InterruptedError):
-                MODULE.wait_for_completion(client, "task-1", 327003, config(), None)
+                MODULE.wait_for_completion(client, "2600028868-WorkflowTask-test1", 327003, config(), None)
         client.DescribeTaskDetail.assert_called_once()
         client.ProcessMedia.assert_not_called()
 
     def test_query_error_includes_task_without_secret(self):
         client = Mock()
         client.DescribeTaskDetail.side_effect = MODULE.TencentCloudSDKException("AuthFailure", "test-secret")
-        with self.assertRaisesRegex(RuntimeError, "task-1") as error:
-            MODULE.wait_for_completion(client, "task-1", 327003, config(), None)
+        with self.assertRaisesRegex(RuntimeError, "2600028868-WorkflowTask-test1") as error:
+            MODULE.wait_for_completion(client, "2600028868-WorkflowTask-test1", 327003, config(), None)
         self.assertNotIn("test-secret", str(error.exception))
 
     def test_private_cos_download_and_atomic_output(self):
@@ -210,11 +210,11 @@ class TencentTests(unittest.TestCase):
             cos.get_object.return_value = download_response(ETag='"' + hashlib.md5(b"video").hexdigest() + '"')
             cos.get_presigned_url.return_value = "https://example.com/signed.mp4"
             with patch.object(MODULE, "folder_paths", SimpleNamespace(get_output_directory=lambda: directory)):
-                path, url, task = MODULE.download_result(cos, {"Path": "/output/video.mp4"}, config(), "task-1", "../../name")
+                path, url, task = MODULE.download_result(cos, {"Path": "/output/video.mp4"}, config(), "2600028868-WorkflowTask-test1", "../../name")
             self.assertEqual(Path(path).read_bytes(), b"video")
             self.assertTrue(Path(path).is_relative_to(Path(directory)))
             self.assertFalse(list(Path(directory).rglob("*.part")))
-            self.assertEqual(task, "task-1")
+            self.assertEqual(task, "2600028868-WorkflowTask-test1")
             self.assertEqual(url, "https://example.com/signed.mp4")
             cos.get_object.assert_called_once_with(Bucket="test-123", Key="output/video.mp4")
             self.assertEqual(cos.get_presigned_url.call_args.kwargs["Expired"], 86400)
@@ -228,10 +228,10 @@ class TencentTests(unittest.TestCase):
                     MODULE, "throw_exception_if_processing_interrupted", side_effect=[None, InterruptedError()] if interrupt else None
                 ):
                     with self.assertRaises((RuntimeError, InterruptedError)):
-                        MODULE.download_result(cos, {"Path": "/output/video.mp4"}, config(), "task-1", "")
+                        MODULE.download_result(cos, {"Path": "/output/video.mp4"}, config(), "2600028868-WorkflowTask-test1", "")
                 self.assertFalse(list(Path(directory).rglob("*.mp4")))
                 self.assertFalse(list(Path(directory).rglob("*.part")))
-                self.assertTrue(list(Path(directory).rglob("task-1.json")))
+                self.assertTrue(list(Path(directory).rglob("2600028868-WorkflowTask-test1.json")))
                 self.assertEqual(cos.get_object.call_count, 1 if interrupt else 3)
 
     def test_empty_truncated_and_checksum_failures_retry_then_succeed(self):
@@ -241,7 +241,7 @@ class TencentTests(unittest.TestCase):
             with self.subTest(first=first):
                 cos = Mock()
                 cos.get_object.side_effect = [first, download_response()]
-                path, _, _ = MODULE.download_result(cos, {"Path": "/output/video.mp4"}, config(), "task-1", "")
+                path, _, _ = MODULE.download_result(cos, {"Path": "/output/video.mp4"}, config(), "2600028868-WorkflowTask-test1", "")
                 self.assertEqual(Path(path).read_bytes(), b"video")
                 self.assertEqual(cos.get_object.call_count, 2)
                 self.assertTrue(first["Body"].get_raw_stream().closed)
@@ -258,7 +258,7 @@ class TencentTests(unittest.TestCase):
                     first = download_response()
                     first["Body"].get_raw_stream().stream = Mock(side_effect=ProtocolError("broken connection"))
                 cos.get_object.side_effect = [first, download_response()]
-                path, _, _ = MODULE.download_result(cos, {"Path": "/output/video.mp4"}, config(), "task-1", "")
+                path, _, _ = MODULE.download_result(cos, {"Path": "/output/video.mp4"}, config(), "2600028868-WorkflowTask-test1", "")
                 self.assertEqual(Path(path).read_bytes(), b"video")
                 self.assertEqual(cos.get_object.call_count, 2)
 
@@ -266,8 +266,8 @@ class TencentTests(unittest.TestCase):
         cos = Mock()
         cos.get_object.side_effect = MODULE.CosServiceError("GET", {"code": "AccessDenied", "message": "test-secret"}, 403)
         with self.assertRaisesRegex(RuntimeError, "COS HTTP 403") as error:
-            MODULE.download_result(cos, {"Path": "/output/video.mp4"}, config(), "task-1", "")
-        self.assertIn("resume_task_id=task-1", str(error.exception))
+            MODULE.download_result(cos, {"Path": "/output/video.mp4"}, config(), "2600028868-WorkflowTask-test1", "")
+        self.assertIn("resume_task_id=2600028868-WorkflowTask-test1", str(error.exception))
         self.assertNotIn("test-secret", str(error.exception))
         cos.get_object.assert_called_once()
 
@@ -276,7 +276,7 @@ class TencentTests(unittest.TestCase):
         cos.get_object.side_effect = lambda **kwargs: download_response(b"")
         with patch.object(MODULE.time, "sleep", side_effect=InterruptedError("cancel")):
             with self.assertRaises(InterruptedError):
-                MODULE.download_result(cos, {"Path": "/output/video.mp4"}, config(), "task-1", "")
+                MODULE.download_result(cos, {"Path": "/output/video.mp4"}, config(), "2600028868-WorkflowTask-test1", "")
         cos.get_object.assert_called_once()
         self.assertFalse(list(self.output_directory.rglob("*.mp4")))
         self.assertFalse(list(self.output_directory.rglob("*.part")))
@@ -286,26 +286,26 @@ class TencentTests(unittest.TestCase):
         first = download_response(b"vid")
         first["content-length"] = first.pop("Content-Length")
         cos.get_object.side_effect = [first, download_response(ETag='"not-a-single-part-md5-2"')]
-        path, _, _ = MODULE.download_result(cos, {"Path": "/output/video.mp4"}, config(), "task-1", "")
+        path, _, _ = MODULE.download_result(cos, {"Path": "/output/video.mp4"}, config(), "2600028868-WorkflowTask-test1", "")
         self.assertEqual(Path(path).read_bytes(), b"video")
         self.assertEqual(cos.get_object.call_count, 2)
 
     def test_download_exhaustion_can_resume_after_restart_without_submission_or_query(self):
         client, cos = Mock(), Mock()
-        client.ProcessMedia.return_value.TaskId = "task-1"
+        client.ProcessMedia.return_value.TaskId = "2600028868-WorkflowTask-test1"
         client.DescribeTaskDetail.return_value = response(result())
         cos.get_object.side_effect = lambda **kwargs: download_response(b"")
         with patch.object(MODULE, "load_config", return_value=config()), patch.object(MODULE, "create_clients", return_value=(client, cos)):
-            with self.assertRaisesRegex(RuntimeError, "after 3 attempt.*received=0, expected=5.*resume_task_id=task-1"):
+            with self.assertRaisesRegex(RuntimeError, "after 3 attempt.*received=0, expected=5.*resume_task_id=2600028868-WorkflowTask-test1"):
                 MODULE.TencentMPSVideoEnhance().upscale("https://example.com/in.mp4", "真人", "1080p")
             self.assertEqual(cos.get_object.call_count, 3)
-            record = MODULE.task_record_path("task-1").read_text(encoding="utf-8")
+            record = MODULE.task_record_path("2600028868-WorkflowTask-test1").read_text(encoding="utf-8")
             self.assertNotIn("test-secret", record)
             self.assertIn("output/video.mp4", record)
             cos.get_object.side_effect = [download_response()]
-            path, _, task_id = MODULE.TencentMPSVideoEnhance().upscale("", "漫剧", "4k", resume_task_id="task-1")
+            path, _, task_id = MODULE.TencentMPSVideoEnhance().upscale("", "漫剧", "4k", resume_task_id="2600028868-WorkflowTask-test1")
         self.assertEqual(Path(path).read_bytes(), b"video")
-        self.assertEqual(task_id, "task-1")
+        self.assertEqual(task_id, "2600028868-WorkflowTask-test1")
         client.ProcessMedia.assert_called_once()
         client.DescribeTaskDetail.assert_called_once()
         cos.upload_file.assert_not_called()
@@ -315,40 +315,42 @@ class TencentTests(unittest.TestCase):
         client.DescribeTaskDetail.return_value = response(result())
         cos.get_object.return_value = download_response()
         with patch.object(MODULE, "load_config", return_value=config()), patch.object(MODULE, "create_clients", return_value=(client, cos)):
-            path, _, task = MODULE.TencentMPSVideoEnhance().upscale("", "漫剧", "4k", resume_task_id=" task-old ")
+            path, _, task = MODULE.TencentMPSVideoEnhance().upscale("", "漫剧", "4k", resume_task_id=" 2600028868-WorkflowTask-old ")
         self.assertEqual(Path(path).read_bytes(), b"video")
-        self.assertEqual(task, "task-old")
-        self.assertEqual(client.DescribeTaskDetail.call_args.args[0].TaskId, "task-old")
+        self.assertEqual(task, "2600028868-WorkflowTask-old")
+        self.assertEqual(client.DescribeTaskDetail.call_args.args[0].TaskId, "2600028868-WorkflowTask-old")
         client.ProcessMedia.assert_not_called()
         cos.upload_file.assert_not_called()
 
     def test_invalid_resume_id_fails_before_network_access(self):
-        with patch.object(MODULE, "load_config", return_value=config()), patch.object(MODULE, "create_clients") as clients:
-            with self.assertRaisesRegex(ValueError, "resume_task_id"):
-                MODULE.TencentMPSVideoEnhance().upscale("", "真人", "1080p", resume_task_id="../../outside")
-        clients.assert_not_called()
+        for task_id in ["../../outside", "video", "eb3d7801-847e-4589-be47-703afe0ab7db"]:
+            with self.subTest(task_id=task_id), patch.object(MODULE, "load_config") as config_loader, patch.object(MODULE, "create_clients") as clients:
+                with self.assertRaisesRegex(ValueError, "resume_task_id"):
+                    MODULE.TencentMPSVideoEnhance().upscale("", "真人", "1080p", resume_task_id=task_id)
+                clients.assert_not_called()
+                config_loader.assert_not_called()
 
     def test_resume_record_for_other_bucket_is_rejected(self):
-        record = MODULE.task_record_path("task-1")
+        record = MODULE.task_record_path("2600028868-WorkflowTask-test1")
         record.parent.mkdir(parents=True)
         record.write_text(json.dumps({"Path": "/output/video.mp4", "OutputStorage": {"Type": "COS", "CosOutputStorage": {
             "Bucket": "other-123", "Region": "ap-guangzhou"}}}), encoding="utf-8")
         client, cos = Mock(), Mock()
         with patch.object(MODULE, "load_config", return_value=config()), patch.object(MODULE, "create_clients", return_value=(client, cos)):
             with self.assertRaisesRegex(RuntimeError, "Unexpected MPS output storage"):
-                MODULE.TencentMPSVideoEnhance().upscale("", "真人", "1080p", resume_task_id="task-1")
+                MODULE.TencentMPSVideoEnhance().upscale("", "真人", "1080p", resume_task_id="2600028868-WorkflowTask-test1")
         client.ProcessMedia.assert_not_called()
         cos.get_object.assert_not_called()
 
     def test_node_orchestrates_one_submission(self):
         client = Mock()
-        client.ProcessMedia.return_value.TaskId = "task-1"
+        client.ProcessMedia.return_value.TaskId = "2600028868-WorkflowTask-test1"
         client.DescribeTaskDetail.return_value = response(result())
         with patch.object(MODULE, "load_config", return_value=config()), patch.object(MODULE, "create_clients", return_value=(client, Mock())), patch.object(
-            MODULE, "download_result", return_value=("local.mp4", "https://example.com/result", "task-1")
+            MODULE, "download_result", return_value=("local.mp4", "https://example.com/result", "2600028868-WorkflowTask-test1")
         ):
             output = MODULE.TencentMPSVideoEnhance().upscale("https://example.com/in.mp4", "真人", "1080p")
-        self.assertEqual(output[2], "task-1")
+        self.assertEqual(output[2], "2600028868-WorkflowTask-test1")
         client.ProcessMedia.assert_called_once()
 
     def test_submission_error_is_not_retried(self):

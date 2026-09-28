@@ -74,6 +74,7 @@ LAS 节点代码、参数、`/api/v1/submit`、`/api/v1/poll`、TOS 输入输出
 - 输出为本地视频路径、有效期 24 小时的 COS 签名链接和任务 ID。本地文件写入 `output/tencent_mps_video_enhance`，文件名附带唯一标识。
 - 下载遇到连接错误、文件不完整或临时服务错误时最多尝试 3 次；检查文件大小，并在 COS 返回单段 MD5 ETag 时校验内容。完整校验通过后才保存为正式视频，权限错误和用户取消不会反复重试。
 - 下载失败后，在 `resume_task_id` 中填写报错里的任务 ID，再运行即可恢复原任务，不会上传输入或重新提交增强。恢复时忽略输入视频、场景和分辨率；留空仍会创建新任务。云端结果位置保存在输出目录的 `tasks` 子目录中，便于重启后恢复；没有本地记录时会向 MPS 查询，需该任务仍在云端查询保留期内。
+- `resume_task_id` 只接受腾讯云 `数字-WorkflowTask-…` 格式的任务 ID，不接受 ComfyUI 任务编号。旧工作流把上传按钮值 `video` 错位带入该字段时，重新加载工作流会自动清空；其他无效值在请求云端前报错。
 - 默认 COS 输入/输出前缀为 `mps-super-resolution/input/` 和 `mps-super-resolution/output/`，可通过配置修改。云端文件保留，节点不自动删除。
 - `tencent_request_timeout` 默认 600 秒，`tencent_poll_interval` 默认 5 秒，`tencent_max_wait_seconds` 默认 3600 秒（从提交成功后开始等待）。超时、中断或查询失败不会自动重新提交；任务 ID 会打印在控制台，云端任务可能仍继续运行，可在 MPS 控制台查看。中断会在轮询等待和下载分块之间检查，进行中的网络请求需等待返回或超时。
 - 超分使用增强模板，与字幕模板 `tencent_subtitle_definition` 无关。按腾讯云实际用量计费，老片/低清预设使用大模型修复，其余使用大模型增强。

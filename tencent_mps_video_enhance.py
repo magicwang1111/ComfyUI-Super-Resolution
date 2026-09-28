@@ -305,8 +305,11 @@ class TencentMPSVideoEnhance:
         }
 
     def upscale(self, video_url, scene, output_resolution, local_video="", output_base_name="", resume_task_id=""):
-        config = load_config()
         task_id = str(resume_task_id or "").strip()
+        if task_id and not re.fullmatch(r"\d+-WorkflowTask-[A-Za-z0-9]+", task_id):
+            raise ValueError("resume_task_id must be a Tencent MPS ID such as 123-WorkflowTask-abc. "
+                             "Leave it empty to process a new video; 'video' and ComfyUI prompt IDs are not valid MPS task IDs.")
+        config = load_config()
         if task_id:
             record = task_record_path(task_id)
             client, cos = create_clients(config)
