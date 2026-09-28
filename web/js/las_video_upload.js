@@ -207,7 +207,7 @@ function configureMediaKitVersionWidgets(node) {
 app.registerExtension({
   name: "ComfyUI.SuperResolution.LocalVideoUpload",
   beforeRegisterNodeDef(nodeType, nodeData) {
-    if (!["VolcengineVideoEnhance", "LASVideoSuperResolution"].includes(nodeData.name)) {
+    if (!["VolcengineVideoEnhance", "LASVideoSuperResolution", "TencentMPSVideoEnhance"].includes(nodeData.name)) {
       return;
     }
 

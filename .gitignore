@@ -1,4 +1,5 @@
 config.local.json
 config.mediakit.local.json
+config.tencent.local.json
 __pycache__/
 *.py[cod]

@@ -26,6 +26,12 @@ class NodeRegistrationTests(unittest.TestCase):
         self.assertEqual(mediakit_class.CATEGORY, "Volcengine/AI MediaKit")
         self.assertIsNot(las_class, mediakit_class)
 
+    def test_registers_tencent_as_an_independent_node(self):
+        node = PACKAGE.NODE_CLASS_MAPPINGS["TencentMPSVideoEnhance"]
+        self.assertEqual(node.CATEGORY, "Tencent/MPS")
+        self.assertEqual(node.RETURN_NAMES, ("local_video_path", "cos_video_url", "task_id"))
+        self.assertEqual(len(PACKAGE.NODE_CLASS_MAPPINGS), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

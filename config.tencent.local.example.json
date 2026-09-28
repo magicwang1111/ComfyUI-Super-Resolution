@@ -1,0 +1,13 @@
+{
+  "tencent_secret_id": "",
+  "tencent_secret_key": "",
+  "tencent_region": "ap-guangzhou",
+  "tencent_mps_host": "mps.tencentcloudapi.com",
+  "tencent_mps_version": "2019-06-12",
+  "tencent_request_timeout": 600,
+  "tencent_poll_interval": 5.0,
+  "tencent_max_wait_seconds": 3600,
+  "tencent_cos_bucket": "your-bucket-appid",
+  "tencent_cos_input_prefix": "mps-super-resolution/input/",
+  "tencent_cos_output_prefix": "mps-super-resolution/output/"
+}

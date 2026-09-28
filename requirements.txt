@@ -1,3 +1,5 @@
 oss2>=2.18
 requests>=2.28
 tos>=2.7
+tencentcloud-sdk-python-mps>=3.1.181,<4
+cos-python-sdk-v5>=1.9.44,<2
